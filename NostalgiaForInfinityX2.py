@@ -264,6 +264,7 @@ class NostalgiaForInfinityX2(IStrategy):
             self.startup_candle_count = 199
 
         if ('external_message_consumer' in self.config and 'producers' in self.config['external_message_consumer']
+                and self.config['external_message_consumer']['enabled']
                 and len(self.config['external_message_consumer']['producers']) > 0):
             self.is_consumer = True
             self.process_only_new_candles = False  # required for consumers

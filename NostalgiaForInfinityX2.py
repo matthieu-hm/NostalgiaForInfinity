@@ -165,6 +165,8 @@ class NostalgiaForInfinityX2(IStrategy):
 
     is_consumer = False
 
+    disable_dataframe_checks = False
+
     #############################################################
     # Buy side configuration
 
@@ -272,7 +274,7 @@ class NostalgiaForInfinityX2(IStrategy):
             # Disable checking the dataframe
             # As the consumer's dataframe is fully replaced by the producer's dataframe
             # it raise an error when the dataframe is checked
-            self.disable_dataframe_checks = False
+            self.disable_dataframe_checks = True
 
         # If the cached data hasn't changed, it's a no-op
         self.target_profit_cache.save()

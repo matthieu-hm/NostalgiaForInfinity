@@ -207,6 +207,13 @@ class NostalgiaForInfinityX3(IStrategy):
     buy_protection_params = {}
 
     #############################################################
+    # Consumer mode
+
+    is_consumer = False
+
+    disable_dataframe_checks = False
+
+    #############################################################
     # CACHES
 
     hold_trades_cache = None
@@ -272,6 +279,17 @@ class NostalgiaForInfinityX3(IStrategy):
             self.startup_candle_count = 710
         elif self.config["exchange"]["name"] in ["bybit"]:
             self.startup_candle_count = 199
+
+        if ('external_message_consumer' in self.config and 'producers' in self.config['external_message_consumer']
+                and self.config['external_message_consumer']['enabled']
+                and len(self.config['external_message_consumer']['producers']) > 0):
+            self.is_consumer = True
+            self.process_only_new_candles = False  # required for consumers
+
+            # Disable checking the dataframe
+            # As the consumer's dataframe is fully replaced by the producer's dataframe
+            # it raise an error when the dataframe is checked
+            self.disable_dataframe_checks = True
 
         # If the cached data hasn't changed, it's a no-op
         self.target_profit_cache.save()
@@ -1132,6 +1150,12 @@ class NostalgiaForInfinityX3(IStrategy):
     def custom_exit(self, pair: str, trade: 'Trade', current_time: 'datetime', current_rate: float,
                     current_profit: float, **kwargs):
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+
+        if (self.is_consumer and not self.has_access_to_dataframe_from_producers(pair)):
+            # Consumer started before the producer that handles this pair
+            # No data available yet, do nothing
+            return None
+
         last_candle = dataframe.iloc[-1].squeeze()
         previous_candle_1 = dataframe.iloc[-2].squeeze()
         previous_candle_2 = dataframe.iloc[-3].squeeze()
@@ -1230,6 +1254,11 @@ class NostalgiaForInfinityX3(IStrategy):
                           current_entry_profit: float, current_exit_profit: float,
                           **kwargs) -> Optional[float]:
         if (self.position_adjustment_enable == False):
+            return None
+
+        if (self.is_consumer and not self.has_access_to_dataframe_from_producers(trade.pair)):
+            # Consumer started before the producer that handles this pair
+            # No data available yet, do nothing
             return None
 
         enter_tag = 'empty'
@@ -2333,6 +2362,10 @@ class NostalgiaForInfinityX3(IStrategy):
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         tik = time.perf_counter()
+
+        if self.is_consumer:
+            return self.get_dataframe_from_producers(dataframe, metadata['pair'])
+
         '''
         --> BTC informative indicators
         ___________________________________________________________________________________________
@@ -2389,6 +2422,10 @@ class NostalgiaForInfinityX3(IStrategy):
         return dataframe
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        if self.is_consumer:
+            # Dataframe already analysed
+            return dataframe
+
         conditions = []
         dataframe.loc[:, 'enter_tag'] = ''
 
@@ -12586,6 +12623,11 @@ class NostalgiaForInfinityX3(IStrategy):
 
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
 
+        if (self.is_consumer and not self.has_access_to_dataframe_from_producers(pair)):
+            # Consumer started before the producer that handles this pair
+            # No data available yet, do nothing
+            return False
+
         if(len(dataframe) < 1):
             return False
 
@@ -12776,6 +12818,42 @@ class NostalgiaForInfinityX3(IStrategy):
             hold_trade = True
 
         return hold_trade
+
+# +---------------------------------------------------------------------------+
+# |                              Consumer                                     |
+# +---------------------------------------------------------------------------+
+
+    def get_dataframe_from_producers(self, dataframe: DataFrame, pair: str) -> DataFrame:
+        for producer in self.config['external_message_consumer']['producers']:
+            if (producer['name']):
+                # This func returns the analyzed dataframe, and when it was analyzed
+                producer_dataframe, _ = self.dp.get_producer_df(pair, producer_name=producer['name'])
+
+                if not producer_dataframe.empty:
+                    log.debug(f"[{pair}] Get dataframe from producer \"{producer['name']}\"")
+                    return producer_dataframe
+
+        # No dataframe provided by any producer: minimal dataframe fallback
+        required_columns_default_0 = ['enter_long', 'enter_short', 'exit_long', 'exit_short']
+        required_columns_default_none = ['enter_tag','exit_tag']
+
+        dataframe[required_columns_default_0] = 0
+        dataframe[required_columns_default_none] = None
+        log.debug(f"[{pair}] No dataframe found from producers")
+        return dataframe
+
+    def has_access_to_dataframe_from_producers(self, pair: str) -> bool:
+        for producer in self.config['external_message_consumer']['producers']:
+            if (producer['name']):
+                # This func returns the analyzed dataframe, and when it was analyzed
+                producer_dataframe, _ = self.dp.get_producer_df(pair, producer_name=producer['name'])
+
+                if not producer_dataframe.empty:
+                    log.debug(f"[{pair}] Found dataframe: producer \"{producer['name']}\"")
+                    return True
+
+        log.debug(f"[{pair}] No dataframe found from producers")
+        return False
 
 # +---------------------------------------------------------------------------+
 # |                              Custom Indicators                            |

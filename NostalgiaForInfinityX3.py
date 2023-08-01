@@ -12842,13 +12842,13 @@ class NostalgiaForInfinityX3(IStrategy):
                     # origin dataframe columns: _x
                     # producer_dataframe columns: _y
 
-                    # -> We keep only the columns from the consumer dataframe (origin),
-                    #    as the consumer update the values more often than the producers
+                    # -> We keep only the columns from the producer dataframe,
+                    #    to avoid different behavior
 
-                    # Get all merged_dataframe columns ending with _x
-                    merged_dataframe_columns_x = [col for col in merged_dataframe.columns if col.endswith('_x')]
-                    # Remove suffix "_x" from merged_dataframe columns
-                    merged_dataframe.rename(columns=dict(zip(merged_dataframe_columns_x, [col[:-2] for col in merged_dataframe_columns_x])), inplace=True)
+                    # Get all merged_dataframe columns ending with _y
+                    merged_dataframe_columns_y = [col for col in merged_dataframe.columns if col.endswith('_y')]
+                    # Remove suffix "_y" from merged_dataframe columns
+                    merged_dataframe.rename(columns=dict(zip(merged_dataframe_columns_y, [col[:-2] for col in merged_dataframe_columns_y])), inplace=True)
 
                     return merged_dataframe
 
